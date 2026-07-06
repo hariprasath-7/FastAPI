@@ -1,35 +1,38 @@
-from fastapi import APIRouter, Depends, status, HTTPException, Response
-from fastapi.security.oauth2 import OAuth2PasswordRequestForm
+from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
-from pydantic import BaseModel
-from .. import database, schemas, model, utils, oauth
 
-router = APIRouter(tags=["Authentication"])
+from .. import database, schemas, model, utils
 
-@router.post("/login")
-def login(
-    user_credentials: OAuth2PasswordRequestForm = Depends(),
-    db: Session = Depends(database.get_db)
-):
-    user = db.query(model.User).filter(
-        model.User.email == user_credentials.username
-    ).first()
+router = APIRouter(
+    prefix="/users",
+    tags=["Users"]
+)
+
+
+@router.post("/", status_code=status.HTTP_201_CREATED, response_model=schemas.UserOut)
+def create_user(user: schemas.UserCreate, db: Session = Depends(database.get_db)):
+
+    hashed_password = utils.hash(user.password)
+    user.password = hashed_password
+
+    new_user = model.User(**user.model_dump())
+
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+
+    return new_user
+
+
+@router.get("/{id}", response_model=schemas.UserOut)
+def get_user(id: int, db: Session = Depends(database.get_db)):
+
+    user = db.query(model.User).filter(model.User.id == id).first()
 
     if not user:
-        raise HTTPException(
+        raise status.HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Invalid credentials"
+            detail=f"User with id {id} was not found"
         )
 
-    if not utils.verify(user_credentials.password, user.password):
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Invalid credentials"
-        )
-
-    access_token = oauth.create_access_token(data={"user_id": user.id})
-
-    return {
-        "access_token": access_token,
-        "token_type": "bearer"
-    }
+    return user
