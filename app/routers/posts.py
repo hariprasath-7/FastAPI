@@ -1,7 +1,7 @@
 from .. import model, schemas, oauth
 from fastapi import FastAPI, HTTPException, Response, status, Depends, APIRouter
 from . import user
-from typing import List
+from typing import List, Optional
 from sqlalchemy.orm import Session
 from ..database import get_db
 
@@ -13,10 +13,13 @@ router = APIRouter(
 
 
 @router.get("/", response_model=List[schemas.Post])
-def get_posts(db: Session = Depends(get_db), user_id : int = Depends(oauth.get_current_user)):
+def get_posts(db: Session = Depends(get_db), current_user : int = Depends(oauth.get_current_user), limit: int = 10, skip : int =0, search: Optional[str] = ""):
+
+    print(limit)
+    
     # cursor.execute("""SELECT * FROM posts """)
     # posts= cursor.fetchall()
-    posts = db.query(model.Post).all()
+    posts = db.query(model.Post).filter(model.Post.title.contains(search)).limit(limit).offset(skip).all()
     return posts
 
 @router.post("/createposts", status_code=status.HTTP_201_CREATED, response_model=schemas.Post)
@@ -34,7 +37,7 @@ def create_posts(post: schemas.PostCreate, db: Session = Depends(get_db), curren
     return new_post
 
 @router.get("/{id}", response_model=schemas.Post)
-def get_post(id: int, db: Session = Depends(get_db), user_id : int = Depends(oauth.get_current_user)):
+def get_post(id: int, db: Session = Depends(get_db), current_user : int = Depends(oauth.get_current_user)):
     # cursor.execute("""SELECT * from posts WHERE id = %s """, (str(id),))
     # post = cursor.fetchone()
     post = db.query(model.Post).filter(model.Post.id == id).first()
@@ -47,7 +50,7 @@ def get_post(id: int, db: Session = Depends(get_db), user_id : int = Depends(oau
     return  post
 
 @router.delete("/{id}", status_code=status.HTTP_204_NO_CONTENT) 
-def delete_post(id: int, db : Session = Depends(get_db), user_id : int = Depends(oauth.get_current_user)):
+def delete_post(id: int, db : Session = Depends(get_db), current_user : int = Depends(oauth.get_current_user)):
     # cursor.execute("""DELETE FROM posts where id = %s returning *""", (str(id),))
     # deleted_post = cursor.fetchone()
     # conn.commit()
@@ -58,7 +61,7 @@ def delete_post(id: int, db : Session = Depends(get_db), user_id : int = Depends
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"post with id: {id} does not exist"
         )
-    if post.owner_id != user.id:
+    if post.owner_id != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=f"Not authorized to perform requested action"
