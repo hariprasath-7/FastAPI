@@ -4,6 +4,7 @@ from . import user
 from typing import List, Optional
 from sqlalchemy.orm import Session
 from ..database import get_db
+from sqlalchemy import func
 
 router = APIRouter(
     prefix = "/posts",
@@ -11,15 +12,17 @@ router = APIRouter(
 )
 
 
-
-@router.get("/", response_model=List[schemas.Post])
+@router.get("/", response_model=List[schemas.PostOut])
+# @router.get("/")
 def get_posts(db: Session = Depends(get_db), current_user : int = Depends(oauth.get_current_user), limit: int = 10, skip : int =0, search: Optional[str] = ""):
 
-    print(limit)
+    # print(limit)
     
     # cursor.execute("""SELECT * FROM posts """)
     # posts= cursor.fetchall()
-    posts = db.query(model.Post).filter(model.Post.title.contains(search)).limit(limit).offset(skip).all()
+    posts =  db.query(model.Post, func.count(model.Vote.post_id).label("votes")).join(model.Vote, model.Vote.post_id == model.Post.id, isouter = True).filter(model.Post.title.contains(search)).group_by(model.Post.id).limit(limit).offset(skip).all()
+    # print(results)
+
     return posts
 
 @router.post("/createposts", status_code=status.HTTP_201_CREATED, response_model=schemas.Post)
@@ -36,18 +39,19 @@ def create_posts(post: schemas.PostCreate, db: Session = Depends(get_db), curren
 
     return new_post
 
-@router.get("/{id}", response_model=schemas.Post)
+@router.get("/{id}", response_model=schemas.PostOut)
 def get_post(id: int, db: Session = Depends(get_db), current_user : int = Depends(oauth.get_current_user)):
     # cursor.execute("""SELECT * from posts WHERE id = %s """, (str(id),))
     # post = cursor.fetchone()
-    post = db.query(model.Post).filter(model.Post.id == id).first()
+    # post = db.query(model.Post).filter(model.Post.id == id).first()
     
-    if not post:
+    posts =  db.query(model.Post, func.count(model.Vote.post_id).label("votes")).join(model.Vote, model.Vote.post_id == model.Post.id, isouter = True).filter(model.Post.id == id).group_by(model.Post.id).first()
+    if not posts:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"post with id: {id} was not found"
         )
-    return  post
+    return  posts
 
 @router.delete("/{id}", status_code=status.HTTP_204_NO_CONTENT) 
 def delete_post(id: int, db : Session = Depends(get_db), current_user : int = Depends(oauth.get_current_user)):
@@ -90,3 +94,4 @@ def update_post(id: int, updated_post: schemas.PostCreate, db: Session = Depends
     post_query.update(updated_post.model_dump(), synchronize_session=False)
     db.commit()
     return post_query.first()
+
